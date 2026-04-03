@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NBA Seeding Probability Simulator</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0a0e1a;
+    color: #e0e0e0;
+    padding: 20px;
+    min-width: 900px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 1.6rem;
+    margin-bottom: 4px;
+    color: #fff;
+    letter-spacing: 0.5px;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 0.85rem;
+    color: #888;
+    margin-bottom: 18px;
+  }
+  .controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+  .controls label { font-size: 0.85rem; color: #aaa; }
+  .controls select, .controls button {
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: 1px solid #333;
+    font-size: 0.9rem;
+    background: #1a1f30;
+    color: #e0e0e0;
+    cursor: pointer;
+  }
+  .controls button {
+    background: #2563eb;
+    border-color: #2563eb;
+    color: #fff;
+    font-weight: 600;
+    transition: background 0.15s;
+  }
+  .controls button:hover { background: #1d4ed8; }
+  .controls button:disabled { background: #555; border-color: #555; cursor: wait; }
+  .status {
+    text-align: center;
+    font-size: 0.8rem;
+    color: #888;
+    margin-bottom: 20px;
+    min-height: 1.2em;
+  }
+  .status .highlight { color: #60a5fa; }
+
+  .conference {
+    margin-bottom: 30px;
+    overflow-x: auto;
+  }
+  .conference h2 {
+    font-size: 1.15rem;
+    margin-bottom: 8px;
+    padding-left: 4px;
+    color: #fff;
+  }
+  .conference h2 .conf-label {
+    font-weight: 400;
+    font-size: 0.85rem;
+    color: #888;
+    margin-left: 6px;
+  }
+
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 0.82rem;
+  }
+  thead th {
+    background: #131829;
+    color: #aaa;
+    font-weight: 600;
+    padding: 7px 4px;
+    text-align: center;
+    border-bottom: 2px solid #2a2f45;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  thead th.team-header { text-align: left; padding-left: 8px; }
+  thead th.record-header { }
+  thead th.seed-col-header { min-width: 52px; }
+  thead th.current-seed-header { }
+  thead th.playin-divider {
+    width: 3px;
+    padding: 0;
+    background: #2563eb;
+    min-width: 3px;
+    max-width: 3px;
+  }
+  thead th.playin-label-cell {
+    color: #60a5fa;
+    font-size: 0.65rem;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+  thead th.spacer-cell {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+
+  tbody tr { border-bottom: 1px solid #1a1f30; }
+  tbody tr:hover { background: rgba(255,255,255,0.03); }
+  td {
+    padding: 6px 4px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  td.team-cell {
+    text-align: left;
+    padding-left: 8px;
+    font-weight: 600;
+    color: #fff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  td.team-cell .tricode {
+    display: inline-block;
+    width: 36px;
+    color: #60a5fa;
+    font-weight: 700;
+  }
+  td.team-cell .fullname { color: #ccc; font-weight: 400; font-size: 0.78rem; }
+  td.record-cell { color: #aaa; font-size: 0.8rem; }
+  td.current-seed-cell { color: #888; font-weight: 600; }
+  td.playin-divider-cell {
+    width: 3px;
+    padding: 0;
+    background: #2563eb;
+    min-width: 3px;
+    max-width: 3px;
+  }
+  td.prob-cell {
+    font-size: 0.78rem;
+    font-weight: 500;
+    border-radius: 3px;
+    transition: background 0.2s;
+  }
+  td.prob-cell.empty { color: #333; }
+
+  .tooltip {
+    display: none;
+    position: absolute;
+    z-index: 100;
+    background: #1e2336;
+    border: 1px solid #3a4060;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 0.78rem;
+    color: #ddd;
+    max-width: 320px;
+    min-width: 220px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    pointer-events: none;
+    line-height: 1.5;
+  }
+  .tooltip.visible { display: block; }
+  .tooltip .tt-header {
+    font-weight: 700;
+    color: #fff;
+    font-size: 0.85rem;
+    margin-bottom: 6px;
+    border-bottom: 1px solid #2a2f45;
+    padding-bottom: 5px;
+  }
+  .tooltip .tt-record {
+    color: #90a0c0;
+    margin-bottom: 8px;
+  }
+  .tooltip .tt-games-title {
+    font-weight: 600;
+    color: #aaa;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .tooltip .tt-game {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 2px 0;
+  }
+  .tooltip .tt-game .matchup { color: #ccc; }
+  .tooltip .tt-game .matchup .loc { color: #888; font-size: 0.7rem; }
+  .tooltip .tt-game .bar-container {
+    width: 90px;
+    height: 10px;
+    background: #2a2f45;
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 0 6px;
+    flex-shrink: 0;
+  }
+  .tooltip .tt-game .bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    display: block;
+  }
+  .tooltip .tt-game .bar-fill.high { background: #4ade80; }
+  .tooltip .tt-game .bar-fill.mid { background: #facc15; }
+  .tooltip .tt-game .bar-fill.low { background: #f87171; }
+  .tooltip .tt-game .pct-val {
+    width: 38px;
+    text-align: right;
+    font-weight: 600;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+  }
+  .tooltip .tt-game .pct-val.high { color: #4ade80; }
+  .tooltip .tt-game .pct-val.mid { color: #facc15; }
+  .tooltip .tt-game .pct-val.low { color: #f87171; }
+
+  .prob-cell { cursor: default; }
+
+  /* H2H Panel */
+  .h2h-panel {
+    max-width: 700px;
+    margin: 0 auto 24px;
+    background: #131829;
+    border: 1px solid #2a2f45;
+    border-radius: 8px;
+    padding: 14px 18px;
+  }
+  .h2h-panel h3 {
+    font-size: 0.95rem;
+    color: #fff;
+    margin-bottom: 10px;
+  }
+  .h2h-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .h2h-controls select {
+    padding: 6px 10px;
+    border-radius: 5px;
+    border: 1px solid #333;
+    background: #1a1f30;
+    color: #e0e0e0;
+    font-size: 0.85rem;
+  }
+  .h2h-controls .vs-label {
+    color: #888;
+    font-size: 0.85rem;
+  }
+  .h2h-result {
+    min-height: 1.5em;
+    font-size: 0.85rem;
+    color: #ccc;
+  }
+  .h2h-result .h2h-matchup {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 0;
+  }
+  .h2h-result .h2h-team {
+    font-weight: 700;
+    color: #60a5fa;
+    width: 36px;
+    text-align: center;
+  }
+  .h2h-result .h2h-score {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+    min-width: 50px;
+    text-align: center;
+  }
+  .h2h-result .h2h-bar-track {
+    flex: 1;
+    height: 14px;
+    background: #2a2f45;
+    border-radius: 4px;
+    overflow: hidden;
+    display: flex;
+  }
+  .h2h-result .h2h-bar-a {
+    height: 100%;
+    background: #3b82f6;
+    transition: width 0.3s;
+  }
+  .h2h-result .h2h-bar-b {
+    height: 100%;
+    background: #ef4444;
+    transition: width 0.3s;
+  }
+  .h2h-result .h2h-no-games { color: #666; font-style: italic; }
+
+  .h2h-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 4px;
+    margin-top: 8px;
+  }
+  .h2h-grid-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 8px;
+    background: #1a1f30;
+    border-radius: 4px;
+    font-size: 0.78rem;
+  }
+  .h2h-grid-item .opp { color: #60a5fa; font-weight: 600; width: 32px; }
+  .h2h-grid-item .rec { color: #ccc; }
+  .h2h-grid-item .rec.winning { color: #4ade80; }
+  .h2h-grid-item .rec.losing { color: #f87171; }
+  .h2h-grid-item .rec.tied { color: #facc15; }
+
+  .tiebreaker-note {
+    text-align: center;
+    font-size: 0.75rem;
+    color: #666;
+    margin-top: 20px;
+    padding: 10px;
+    border-top: 1px solid #1a1f30;
+  }
+
+  .loading-bar {
+    height: 3px;
+    background: #1a1f30;
+    border-radius: 2px;
+    overflow: hidden;
+    margin: 0 auto 10px;
+    max-width: 300px;
+  }
+  .loading-bar .fill {
+    height: 100%;
+    background: #2563eb;
+    width: 0%;
+    transition: width 0.3s;
+    border-radius: 2px;
+  }
+  .loading-bar.active .fill {
+    animation: indeterminate 1.2s ease-in-out infinite;
+  }
+  @keyframes indeterminate {
+    0% { width: 0%; margin-left: 0; }
+    50% { width: 60%; margin-left: 20%; }
+    100% { width: 0%; margin-left: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<h1>NBA Seeding Probability Simulator</h1>
+<p class="subtitle"><span id="season-label"></span>Monte Carlo simulation &mdash; every remaining game is a 50/50 coin flip</p>
+
+<div class="controls">
+  <label for="n-sims">Simulations:</label>
+  <select id="n-sims">
+    <option value="1000">1,000</option>
+    <option value="5000">5,000</option>
+    <option value="10000" selected>10,000</option>
+    <option value="25000">25,000</option>
+  </select>
+  <button id="run-btn" onclick="runSimulation()">Run Simulation</button>
+</div>
+
+<div class="loading-bar" id="loading-bar"><div class="fill"></div></div>
+<div class="status" id="status">Loading team data&hellip;</div>
+
+<div class="h2h-panel" id="h2h-panel">
+  <h3>Head-to-Head Records</h3>
+  <div class="h2h-controls">
+    <select id="h2h-team-a"><option value="">Select team...</option></select>
+    <span class="vs-label">vs</span>
+    <select id="h2h-team-b"><option value="">All teams</option></select>
+  </div>
+  <div class="h2h-result" id="h2h-result">Select a team to view head-to-head records.</div>
+</div>
+
+<div id="tables-container"></div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<div class="tiebreaker-note">
+  Tiebreakers: (1) head-to-head &middot; (2) conference record &middot; (3) division record &middot; (4) coin flip. Each game is a 50/50 coin toss.
+</div>
+
+<script>
+let teamsData = null;
+let simDetails = null; // {East: {TRI: {"0": {avg_wins, ...}, ...}}, West: ...}
+const tooltip = document.getElementById('tooltip');
+
+async function loadTeams() {
+  try {
+    const resp = await fetch('/api/teams');
+    teamsData = await resp.json();
+    if (teamsData.season) {
+      document.getElementById('season-label').textContent = teamsData.season + ' Season \u00B7 ';
+    }
+    let fetchedStr = '';
+    if (teamsData.data_fetched_at) {
+      const d = new Date(teamsData.data_fetched_at);
+      fetchedStr = ` &middot; Standings as of ${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
+    }
+    document.getElementById('status').innerHTML =
+      `<span class="highlight">${teamsData.remaining_games}</span> remaining games loaded. Ready to simulate.${fetchedStr}`;
+    buildTables();
+  } catch (e) {
+    document.getElementById('status').textContent = 'Error loading team data: ' + e.message;
+  }
+}
+
+function buildTables() {
+  const container = document.getElementById('tables-container');
+  container.innerHTML = '';
+  for (const conf of ['East', 'West']) {
+    const section = document.createElement('div');
+    section.className = 'conference';
+    section.id = `conf-${conf}`;
+
+    const title = conf === 'East' ? 'Eastern Conference' : 'Western Conference';
+    section.innerHTML = `<h2>${title}</h2>`;
+
+    const table = document.createElement('table');
+    table.id = `table-${conf}`;
+
+    // Header
+    const thead = document.createElement('thead');
+    // Label row for Play-In
+    let labelRow = '<tr>';
+    labelRow += '<th class="spacer-cell" colspan="11"></th>';
+    labelRow += '<th class="playin-divider"></th>';
+    labelRow += '<th class="playin-label-cell" colspan="4">Play-In</th>';
+    labelRow += '</tr>';
+    // Seed number row
+    let headerRow = '<tr>';
+    headerRow += '<th class="current-seed-header">#</th>';
+    headerRow += '<th class="team-header">Team</th>';
+    headerRow += '<th class="record-header">W-L</th>';
+    headerRow += '<th class="record-header">Conf</th>';
+    headerRow += '<th class="record-header">Div</th>';
+    for (let s = 1; s <= 6; s++) {
+      headerRow += `<th class="seed-col-header">${s}</th>`;
+    }
+    headerRow += '<th class="playin-divider"></th>';
+    for (let s = 7; s <= 10; s++) {
+      headerRow += `<th class="seed-col-header">${s}</th>`;
+    }
+    headerRow += '</tr>';
+    thead.innerHTML = labelRow + headerRow;
+    table.appendChild(thead);
+
+    // Body (empty, filled after simulation)
+    const tbody = document.createElement('tbody');
+    tbody.id = `tbody-${conf}`;
+    const teams = teamsData[conf];
+    for (const team of teams) {
+      const tr = document.createElement('tr');
+      tr.id = `row-${team.tricode}`;
+      let cells = '';
+      cells += `<td class="current-seed-cell">${team.seed}</td>`;
+      cells += `<td class="team-cell"><span class="tricode">${team.tricode}</span> <span class="fullname">${team.name}</span></td>`;
+      cells += `<td class="record-cell">${team.wins}&ndash;${team.losses}</td>`;
+      cells += `<td class="record-cell">${team.conf_w}&ndash;${team.conf_l}</td>`;
+      cells += `<td class="record-cell">${team.div_w}&ndash;${team.div_l}</td>`;
+      for (let s = 0; s < 6; s++) {
+        cells += `<td class="prob-cell empty" data-seed="${s}" data-team="${team.tricode}">&mdash;</td>`;
+      }
+      cells += '<td class="playin-divider-cell"></td>';
+      for (let s = 6; s < 10; s++) {
+        cells += `<td class="prob-cell empty" data-seed="${s}" data-team="${team.tricode}">&mdash;</td>`;
+      }
+      tr.innerHTML = cells;
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    section.appendChild(table);
+    container.appendChild(section);
+  }
+}
+
+function getHeatColor(pct) {
+  // 0% -> transparent, low -> pale blue, mid -> yellow, high -> deep orange
+  if (pct < 0.5) return 'transparent';
+  // Normalize: 0.5-100 -> 0-1
+  const t = Math.min(pct / 60, 1); // cap at 60% for max intensity
+  // Pale blue (200,220,255) -> Yellow (255,230,100) -> Deep orange (230,100,20)
+  let r, g, b;
+  if (t < 0.4) {
+    const u = t / 0.4;
+    r = Math.round(40 + u * 140);
+    g = Math.round(60 + u * 130);
+    b = Math.round(160 - u * 60);
+  } else {
+    const u = (t - 0.4) / 0.6;
+    r = Math.round(180 + u * 55);
+    g = Math.round(190 - u * 110);
+    b = Math.round(100 - u * 80);
+  }
+  const alpha = 0.15 + 0.75 * Math.min(pct / 50, 1);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function getTextColor(pct) {
+  if (pct < 0.5) return '#333';
+  if (pct < 5) return '#999';
+  if (pct > 40) return '#fff';
+  return '#ddd';
+}
+
+function updateTables(probabilities) {
+  for (const conf of ['East', 'West']) {
+    const confProbs = probabilities[conf];
+    for (const [tricode, probs] of Object.entries(confProbs)) {
+      for (let s = 0; s < 10; s++) {
+        const cell = document.querySelector(`td[data-team="${tricode}"][data-seed="${s}"]`);
+        if (!cell) continue;
+        const pct = probs[s];
+        if (pct < 0.5) {
+          cell.textContent = '';
+          cell.className = 'prob-cell empty';
+          cell.style.background = 'transparent';
+          cell.style.color = '#333';
+        } else {
+          cell.textContent = pct.toFixed(1) + '%';
+          cell.className = 'prob-cell';
+          cell.style.background = getHeatColor(pct);
+          cell.style.color = getTextColor(pct);
+        }
+        // Store conf for tooltip lookup
+        cell.dataset.conf = conf;
+      }
+    }
+  }
+  attachTooltipListeners();
+}
+
+function attachTooltipListeners() {
+  document.querySelectorAll('td.prob-cell:not(.empty)').forEach(cell => {
+    cell.addEventListener('mouseenter', showTooltip);
+    cell.addEventListener('mousemove', moveTooltip);
+    cell.addEventListener('mouseleave', hideTooltip);
+  });
+}
+
+function showTooltip(e) {
+  const cell = e.currentTarget;
+  const tri = cell.dataset.team;
+  const seed = cell.dataset.seed;
+  const conf = cell.dataset.conf;
+  if (!simDetails || !simDetails[conf] || !simDetails[conf][tri]) return;
+  const detail = simDetails[conf][tri][seed];
+  if (!detail) return;
+
+  // Find team full name
+  let teamName = tri;
+  if (teamsData && teamsData[conf]) {
+    const t = teamsData[conf].find(t => t.tricode === tri);
+    if (t) teamName = t.name;
+  }
+
+  const seedNum = parseInt(seed) + 1;
+  let html = `<div class="tt-header">${teamName} &rarr; #${seedNum} seed</div>`;
+  html += `<div class="tt-record">`;
+  html += `Avg record: <strong>${detail.avg_wins}&ndash;${detail.avg_losses}</strong>`;
+  html += ` &nbsp;(range: ${detail.min_wins}&ndash;${82 - detail.min_wins} to ${detail.max_wins}&ndash;${82 - detail.max_wins})`;
+  html += `</div>`;
+
+  if (detail.games && detail.games.length > 0) {
+    html += `<div class="tt-games-title">Key remaining games</div>`;
+    for (const g of detail.games) {
+      const loc = g.home ? 'vs' : '@';
+      const wp = g.win_pct;
+      const colorClass = wp >= 60 ? 'high' : wp >= 40 ? 'mid' : 'low';
+      html += `<div class="tt-game">`;
+      html += `<span class="matchup"><span class="loc">${loc}</span> ${g.vs}</span>`;
+      html += `<span class="bar-container"><span class="bar-fill ${colorClass}" style="width:${wp}%"></span></span>`;
+      html += `<span class="pct-val ${colorClass}">W ${wp}%</span>`;
+      html += `</div>`;
+    }
+  }
+
+  tooltip.innerHTML = html;
+  tooltip.classList.add('visible');
+  positionTooltip(e);
+}
+
+function moveTooltip(e) {
+  positionTooltip(e);
+}
+
+function positionTooltip(e) {
+  const pad = 12;
+  let x = e.pageX + pad;
+  let y = e.pageY + pad;
+  // Keep tooltip within viewport
+  const rect = tooltip.getBoundingClientRect();
+  if (x + rect.width > window.innerWidth + window.scrollX - 10) {
+    x = e.pageX - rect.width - pad;
+  }
+  if (y + rect.height > window.innerHeight + window.scrollY - 10) {
+    y = e.pageY - rect.height - pad;
+  }
+  tooltip.style.left = x + 'px';
+  tooltip.style.top = y + 'px';
+}
+
+function hideTooltip() {
+  tooltip.classList.remove('visible');
+}
+
+async function runSimulation() {
+  const btn = document.getElementById('run-btn');
+  const bar = document.getElementById('loading-bar');
+  const status = document.getElementById('status');
+  const nSims = parseInt(document.getElementById('n-sims').value);
+
+  btn.disabled = true;
+  bar.classList.add('active');
+  status.textContent = `Running ${nSims.toLocaleString()} simulations...`;
+
+  try {
+    const resp = await fetch('/api/simulate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ n_simulations: nSims }),
+    });
+    const data = await resp.json();
+    simDetails = data.details;
+    updateTables(data.probabilities);
+
+    const now = new Date().toLocaleDateString() + ' ' + new Date().toLocaleTimeString();
+    status.innerHTML =
+      `<span class="highlight">${data.n_simulations.toLocaleString()}</span> simulations completed in ` +
+      `<span class="highlight">${data.elapsed_seconds}s</span> &middot; ` +
+      `${data.remaining_games} games simulated per run &middot; Last updated: ${now}`;
+  } catch (e) {
+    status.textContent = 'Simulation error: ' + e.message;
+  } finally {
+    btn.disabled = false;
+    bar.classList.remove('active');
+  }
+}
+
+// --- H2H ---
+let h2hData = null; // full H2H matrix
+
+async function loadH2H() {
+  try {
+    const resp = await fetch('/api/h2h');
+    h2hData = await resp.json();
+    populateH2HDropdowns();
+  } catch (e) {
+    console.error('Failed to load H2H:', e);
+  }
+}
+
+function populateH2HDropdowns() {
+  if (!h2hData || !teamsData) return;
+  const selA = document.getElementById('h2h-team-a');
+  const selB = document.getElementById('h2h-team-b');
+
+  // Build sorted team list from both conferences
+  const allTeams = [...teamsData.East, ...teamsData.West]
+    .sort((a, b) => a.tricode.localeCompare(b.tricode));
+
+  // Team A dropdown
+  selA.innerHTML = '<option value="">Select team...</option>';
+  for (const t of allTeams) {
+    selA.innerHTML += `<option value="${t.tricode}">${t.tricode} — ${t.name}</option>`;
+  }
+
+  // Team B dropdown (with "All teams" option)
+  selB.innerHTML = '<option value="">All teams</option>';
+  for (const t of allTeams) {
+    selB.innerHTML += `<option value="${t.tricode}">${t.tricode} — ${t.name}</option>`;
+  }
+
+  selA.addEventListener('change', renderH2H);
+  selB.addEventListener('change', renderH2H);
+}
+
+function renderH2H() {
+  const triA = document.getElementById('h2h-team-a').value;
+  const triB = document.getElementById('h2h-team-b').value;
+  const container = document.getElementById('h2h-result');
+
+  if (!triA || !h2hData || !h2hData.records) {
+    container.innerHTML = 'Select a team to view head-to-head records.';
+    return;
+  }
+
+  const teamRecords = h2hData.records[triA];
+  if (!teamRecords) {
+    container.innerHTML = 'No records found.';
+    return;
+  }
+
+  if (triB) {
+    // Show single matchup
+    const rec = teamRecords[triB];
+    if (!rec || (rec.wins + rec.losses === 0)) {
+      container.innerHTML = `<div class="h2h-no-games">${triA} and ${triB} have not played this season.</div>`;
+      return;
+    }
+    const total = rec.wins + rec.losses;
+    const pctA = (rec.wins / total) * 100;
+    const pctB = (rec.losses / total) * 100;
+    container.innerHTML = `
+      <div class="h2h-matchup">
+        <span class="h2h-team">${triA}</span>
+        <span class="h2h-score">${rec.wins}</span>
+        <div class="h2h-bar-track">
+          <div class="h2h-bar-a" style="width:${pctA}%"></div>
+          <div class="h2h-bar-b" style="width:${pctB}%"></div>
+        </div>
+        <span class="h2h-score">${rec.losses}</span>
+        <span class="h2h-team">${triB}</span>
+      </div>`;
+  } else {
+    // Show grid of all opponents
+    const opponents = Object.keys(teamRecords).sort();
+    if (opponents.length === 0) {
+      container.innerHTML = '<div class="h2h-no-games">No games played yet.</div>';
+      return;
+    }
+    let html = `<div class="h2h-grid">`;
+    for (const opp of opponents) {
+      const r = teamRecords[opp];
+      const cls = r.wins > r.losses ? 'winning' : r.wins < r.losses ? 'losing' : 'tied';
+      html += `<div class="h2h-grid-item">
+        <span class="opp">${opp}</span>
+        <span class="rec ${cls}">${r.wins}&ndash;${r.losses}</span>
+      </div>`;
+    }
+    html += `</div>`;
+    container.innerHTML = html;
+  }
+}
+
+// Init
+(async () => {
+  await loadTeams();
+  await loadH2H();
+})();
+</script>
+</body>
+</html>
