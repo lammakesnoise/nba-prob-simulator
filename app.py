@@ -71,7 +71,15 @@ team_game_indices = {}  # team_idx -> [(game_index, opponent_tricode, is_home), 
 def fetch_data():
     """Fetch schedule from CDN, optionally enrich with standings."""
     global teams, remaining_games, h2h_base, team_ids, team_idx
-    global conference_teams, game_is_conf, game_is_div
+    global conference_teams, game_is_conf, game_is_div, data_fetched_at
+
+    # Reset mutable globals
+    teams = {}
+    remaining_games = []
+    game_is_conf = []
+    game_is_div = []
+    team_game_indices.clear()
+    conference_teams = {"East": [], "West": []}
 
     # Initialize teams from metadata
     for tid, (tri, city, name, conf, div) in TEAM_META.items():
@@ -186,7 +194,6 @@ def fetch_data():
     except Exception as e:
         print(f"Standings API unavailable ({e}), using computed seeds")
 
-    global data_fetched_at
     from datetime import datetime, timezone
     data_fetched_at = datetime.now(timezone.utc).isoformat()
 
@@ -384,8 +391,36 @@ def get_teams():
     return jsonify(result)
 
 
+@app.route("/api/refresh", methods=["POST"])
+def refresh_data():
+    """Re-fetch NBA schedule and standings data."""
+    try:
+        fetch_data()
+        return jsonify({
+            "success": True,
+            "remaining_games": len(remaining_games),
+            "data_fetched_at": data_fetched_at,
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def _auto_refresh_if_stale():
+    """Re-fetch data if it's older than 1 hour."""
+    from datetime import datetime, timezone
+    if not data_fetched_at:
+        return
+    fetched = datetime.fromisoformat(data_fetched_at)
+    age = (datetime.now(timezone.utc) - fetched).total_seconds()
+    if age > 3600:  # 1 hour
+        print(f"Data is {age/3600:.1f}h old, auto-refreshing...")
+        fetch_data()
+
+
 @app.route("/api/simulate", methods=["POST"])
 def simulate():
+    _auto_refresh_if_stale()
+
     data = request.get_json()
     n_sims = min(data.get("n_simulations", 10000), 50000)
 
@@ -449,6 +484,7 @@ def simulate():
         "n_simulations": n_sims,
         "elapsed_seconds": round(elapsed, 2),
         "remaining_games": len(remaining_games),
+        "data_fetched_at": data_fetched_at,
     })
 
 

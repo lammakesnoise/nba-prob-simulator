@@ -379,6 +379,7 @@
     <option value="25000">25,000</option>
   </select>
   <button id="run-btn" onclick="runSimulation()">Run Simulation</button>
+  <button id="refresh-btn" onclick="refreshData()" style="background:#1a1f30;border-color:#333;color:#aaa;font-weight:400;">&#x21bb; Refresh Data</button>
 </div>
 
 <div class="loading-bar" id="loading-bar"><div class="fill"></div></div>
@@ -656,6 +657,30 @@ async function runSimulation() {
   } finally {
     btn.disabled = false;
     bar.classList.remove('active');
+  }
+}
+
+async function refreshData() {
+  const btn = document.getElementById('refresh-btn');
+  const status = document.getElementById('status');
+  btn.disabled = true;
+  status.textContent = 'Refreshing data from NBA API...';
+
+  try {
+    const resp = await fetch('/api/refresh', { method: 'POST' });
+    const data = await resp.json();
+    if (data.success) {
+      // Reload teams and H2H with fresh data
+      await loadTeams();
+      await loadH2H();
+      status.innerHTML = `Data refreshed. <span class="highlight">${data.remaining_games}</span> remaining games.`;
+    } else {
+      status.textContent = 'Refresh failed: ' + (data.error || 'unknown error');
+    }
+  } catch (e) {
+    status.textContent = 'Refresh error: ' + e.message;
+  } finally {
+    btn.disabled = false;
   }
 }
 
