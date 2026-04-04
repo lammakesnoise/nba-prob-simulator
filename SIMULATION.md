@@ -97,62 +97,83 @@ All 15 teams in a conference are sorted by **overall win percentage** (wins / to
 
 Teams with **identical win percentages** (compared with a tolerance of `1e-9` to handle floating-point arithmetic) form a tied group. Each tied group is resolved independently using the tiebreaker cascade below.
 
+### Pre-step: Determine division leaders
+
+Before ranking conferences, the simulator identifies the **division leader** for each of the 6 NBA divisions. The division leader is the team with the best overall win percentage within that division. If multiple teams are tied for the division lead, a head-to-head tiebreaker among the tied teams determines the leader.
+
+Division leader status is used as a tiebreaker criterion in the cascade below.
+
 ### Tiebreaker cascade
 
-The `break_tie()` function receives a group of 2 or more teams with the same win percentage and attempts to fully order them. Tiebreakers are applied **in sequence** — each tiebreaker is only used if the previous one fails to produce a complete ordering.
+The NBA uses **different tiebreaker orders** for 2-team ties versus 3-or-more-team ties. The simulator implements both, matching the official NBA playoff tie-break rules.
 
-#### Tiebreaker 1: Head-to-head record among tied teams
+When a tiebreaker criterion creates partial differentiation (some teams separated, others still tied), the separated teams are assigned their seeds and the **tiebreaker criteria restart from the beginning** for the remaining tied subgroup.
 
-For each team in the tied group, compute their **win percentage in games played against the other tied teams only**:
+---
 
-```
-h2h_wpct[team] = (wins vs other tied teams) / (total games vs other tied teams)
-```
+#### 2-Team Tiebreaker Order
 
-This includes both completed-season H2H results *and* the simulated game outcomes for the current simulation run (since the H2H matrix is updated with each coin flip).
+##### (1) Head-to-head record
 
-- If all teams have **distinct** H2H win percentages → order by H2H win% descending. Tie resolved.
-- If any teams share the same H2H win% → proceed to tiebreaker 2.
+The direct season series between the two teams. If one team has more wins against the other, that team ranks higher.
 
-**Important detail:** For a 2-team tie, this is simply their season series. For a 3+ team tie, this is the **aggregate** record against all other teams in the tied group, not pairwise elimination.
+##### (2) Division leader
 
-#### Tiebreaker 2: Conference record
+A division leader wins the tiebreak over a team that does not lead its division. If both or neither are division leaders, this step is skipped.
 
-For each tied team, use their **conference win percentage**:
+##### (3) Division record (conditional)
 
-```
-conf_pct[team] = conf_wins / (conf_wins + conf_losses)
-```
-
-- If all tied teams have distinct conference win percentages → order by conference win% descending. Tie resolved.
-- If any teams share the same conference win% → proceed to tiebreaker 3.
-
-#### Tiebreaker 3: Division record (conditional)
-
-This tiebreaker **only applies if all tied teams are in the same division**. If the tied teams span multiple divisions, this step is skipped entirely.
-
-For each tied team, use their **division win percentage**:
+**Only applies if both teams are in the same division.** The team with the better division win percentage ranks higher.
 
 ```
 div_pct[team] = div_wins / (div_wins + div_losses)
 ```
 
-- If all tied teams have distinct division win percentages → order by division win% descending. Tie resolved.
-- If any teams share the same division win%, or teams are in different divisions → proceed to tiebreaker 4.
+##### (4) Conference record
 
-#### Tiebreaker 4: Random coin flip (composite fallback)
-
-If all previous tiebreakers fail to produce a complete ordering, the remaining teams are sorted by a **composite key** that combines all prior tiebreaker values with a random number:
+The team with the better conference win percentage ranks higher.
 
 ```
-sort key = (-h2h_wpct, -conf_pct, -random_value)
+conf_pct[team] = conf_wins / (conf_wins + conf_losses)
 ```
 
-Each team receives an independent random value from `np.random.random()` (uniform [0, 1)). This ensures:
-- Teams that were partially separated by earlier tiebreakers retain their relative order.
-- Teams that are still tied after all deterministic tiebreakers are separated randomly.
+##### (5) Random
 
-This is equivalent to flipping a coin among the remaining tied teams.
+The official NBA rules include additional tiebreakers here (record vs. playoff-eligible teams, point differential) that cannot be meaningfully simulated with 50/50 coin flips. The simulator falls back to a random coin flip.
+
+---
+
+#### 3-or-More-Team Tiebreaker Order
+
+##### (1) Division leader
+
+Division leaders win the tiebreak over non-leaders, **regardless of whether the tied teams are in the same division**. If one or more teams are division leaders, they are ranked above the non-leaders. Each subgroup (leaders, non-leaders) then restarts the tiebreaker cascade independently.
+
+##### (2) Head-to-head record among tied teams
+
+For each team in the tied group, compute their **aggregate win percentage** in games played against the other tied teams:
+
+```
+h2h_wpct[team] = (wins vs other tied teams) / (total games vs other tied teams)
+```
+
+If any differentiation is found, teams are grouped by H2H win%. Teams that separate out are assigned their seeds, and any remaining tied subgroups restart the cascade.
+
+**Note:** For 3+ team ties, this is the aggregate record against all other teams in the tied group, not pairwise elimination.
+
+##### (3) Division record (conditional)
+
+**Only applies if all tied teams are in the same division.** Teams are grouped by division win percentage. Any differentiation assigns seeds and restarts the cascade for remaining ties.
+
+##### (4) Conference record
+
+Teams are grouped by conference win percentage. Any differentiation assigns seeds and restarts the cascade for remaining ties.
+
+##### (5) Random
+
+As with 2-team ties, the remaining official tiebreakers (record vs. playoff-eligible teams, point differential) cannot be simulated. Each remaining tied team receives an independent random value, breaking the tie.
+
+---
 
 ### Edge cases in tiebreaker resolution
 
@@ -162,6 +183,8 @@ This is equivalent to flipping a coin among the remaining tied teams.
 | 3+ team tie with H2H | Aggregate H2H among all tied teams (not round-robin elimination) |
 | No H2H games played | H2H win% defaults to 0.5 (neutral) |
 | Cross-division tie | Division record tiebreaker is skipped entirely |
+| Division leader vs non-leader | Leader wins; applied first for 3+ teams, second for 2 teams |
+| Multiple division leaders tied | Each subgroup restarts tiebreaker cascade independently |
 | All tiebreakers produce ties | Random coin flip decides |
 
 ---
@@ -209,7 +232,7 @@ The top 5 games by impact are returned, showing the opponent, home/away status, 
 | Simplification | Impact |
 |----------------|--------|
 | **All games are 50/50 coin flips** | Does not account for team strength, home-court advantage, rest days, injuries, or motivation. This is by design — the simulator answers "what are the seeding odds given pure randomness?" |
-| **Simplified tiebreaker rules** | The real NBA tiebreaker rules include additional steps (e.g., record vs. playoff-eligible teams, point differential, strength of schedule). This simulator implements the four most impactful tiebreakers. |
-| **Aggregate H2H for multi-team ties** | The real NBA uses a more complex procedure for 3+ team ties that may involve reducing to pairwise comparisons after eliminating teams. This simulator uses a single aggregate H2H pass. |
+| **Omitted late-stage tiebreakers** | The official rules include record vs. playoff-eligible teams (own and other conference) and point differential. These cannot be meaningfully simulated with 50/50 coin flips (no score data, playoff eligibility is circular). The simulator falls back to random for these cases. |
+| **Aggregate H2H for multi-team ties** | The real NBA uses a more complex procedure for 3+ team ties that may involve reducing to pairwise comparisons after eliminating teams. This simulator uses a single aggregate H2H pass, but does correctly restart the tiebreaker cascade when partial differentiation occurs. |
 | **No Play-In Tournament simulation** | The simulator determines seeds 7–10 but does not simulate the Play-In games themselves. |
 | **82-game season assumed** | The total games denominator is hardcoded to 82 for average record calculations. |

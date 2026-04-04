@@ -331,6 +331,78 @@
   .h2h-grid-item .rec.losing { color: #f87171; }
   .h2h-grid-item .rec.tied { color: #facc15; }
 
+  /* Division Standings */
+  .divisions-panel {
+    max-width: 900px;
+    margin: 0 auto 24px;
+    background: #131829;
+    border: 1px solid #2a2f45;
+    border-radius: 8px;
+    padding: 14px 18px;
+  }
+  .divisions-panel h3 {
+    font-size: 0.95rem;
+    color: #fff;
+    margin-bottom: 10px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .divisions-panel h3 .toggle { color: #888; font-size: 0.8rem; margin-left: 6px; }
+  .divisions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+  }
+  .div-card {
+    background: #1a1f30;
+    border-radius: 6px;
+    padding: 10px 12px;
+  }
+  .div-card-header {
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #60a5fa;
+    margin-bottom: 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #2a2f45;
+  }
+  .div-card-header .conf-tag {
+    font-weight: 400;
+    color: #888;
+    font-size: 0.72rem;
+    margin-left: 4px;
+  }
+  .div-team-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 3px 0;
+    font-size: 0.78rem;
+  }
+  .div-team-row .div-team-name {
+    color: #ccc;
+    flex: 1;
+  }
+  .div-team-row .div-team-tri {
+    color: #60a5fa;
+    font-weight: 700;
+    width: 32px;
+    margin-right: 6px;
+  }
+  .div-team-row .div-team-rec {
+    color: #aaa;
+    width: 46px;
+    text-align: center;
+  }
+  .div-team-row .div-team-rec.conf-rec { color: #90a0c0; }
+  .div-team-row .div-team-rec.div-rec { color: #c090d0; }
+  .div-team-row .div-team-header {
+    font-weight: 600;
+    color: #888;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+  }
+
   .tiebreaker-note {
     text-align: center;
     font-size: 0.75rem;
@@ -395,12 +467,18 @@
   <div class="h2h-result" id="h2h-result">Select a team to view head-to-head records.</div>
 </div>
 
+<div class="divisions-panel" id="divisions-panel">
+  <h3 onclick="toggleDivisions()">Division Standings <span class="toggle" id="div-toggle">&#9654;</span></h3>
+  <div id="divisions-content" class="divisions-grid" style="display:none;"></div>
+</div>
+
 <div id="tables-container"></div>
 
 <div class="tooltip" id="tooltip"></div>
 
 <div class="tiebreaker-note">
-  Tiebreakers: (1) head-to-head &middot; (2) conference record &middot; (3) division record &middot; (4) coin flip. Each game is a 50/50 coin toss.
+  2-team tiebreakers: (1) H2H &middot; (2) division leader &middot; (3) division record &middot; (4) conference record &middot; (5) coin flip.<br>
+  3+ team tiebreakers: (1) division leader &middot; (2) H2H &middot; (3) division record &middot; (4) conference record &middot; (5) coin flip. Each game is a 50/50 coin toss.
 </div>
 
 <script>
@@ -423,6 +501,7 @@ async function loadTeams() {
     document.getElementById('status').innerHTML =
       `<span class="highlight">${teamsData.remaining_games}</span> remaining games loaded. Ready to simulate.${fetchedStr}`;
     buildTables();
+    buildDivisions();
   } catch (e) {
     document.getElementById('status').textContent = 'Error loading team data: ' + e.message;
   }
@@ -627,6 +706,13 @@ function hideTooltip() {
   tooltip.classList.remove('visible');
 }
 
+// Dismiss tooltip on mobile by tapping anywhere else
+document.addEventListener('touchstart', function(e) {
+  if (!e.target.closest('.prob-cell')) {
+    hideTooltip();
+  }
+});
+
 async function runSimulation() {
   const btn = document.getElementById('run-btn');
   const bar = document.getElementById('loading-bar');
@@ -659,6 +745,82 @@ async function runSimulation() {
     bar.classList.remove('active');
   }
 }
+
+function toggleDivisions() {
+  const content = document.getElementById('divisions-content');
+  const toggle = document.getElementById('div-toggle');
+  if (content.style.display === 'none') {
+    content.style.display = 'grid';
+    toggle.innerHTML = '&#9660;';
+  } else {
+    content.style.display = 'none';
+    toggle.innerHTML = '&#9654;';
+  }
+}
+
+function buildDivisions() {
+  if (!teamsData) return;
+  const allTeams = [...teamsData.East, ...teamsData.West];
+
+  // Group by division
+  const divOrder = [
+    { div: 'Atlantic', conf: 'East' },
+    { div: 'Central', conf: 'East' },
+    { div: 'Southeast', conf: 'East' },
+    { div: 'Northwest', conf: 'West' },
+    { div: 'Pacific', conf: 'West' },
+    { div: 'Southwest', conf: 'West' },
+  ];
+
+  // Build division lookup from TEAM_META equivalent (conference info is in teamsData)
+  const divTeams = {};
+  for (const t of allTeams) {
+    // We need division info - it's not in teamsData directly, so we'll match from the table
+    if (!divTeams[t.tricode]) divTeams[t.tricode] = t;
+  }
+
+  const container = document.getElementById('divisions-content');
+  let html = '';
+
+  for (const { div, conf } of divOrder) {
+    // Filter teams by division - we need to get division from the div record context
+    const teams = allTeams.filter(t => {
+      // Match division by checking team metadata
+      return TEAM_DIVISIONS[t.tricode] === div;
+    }).sort((a, b) => b.div_w / (b.div_w + b.div_l || 1) - a.div_w / (a.div_w + a.div_l || 1));
+
+    html += `<div class="div-card">`;
+    html += `<div class="div-card-header">${div} <span class="conf-tag">${conf}</span></div>`;
+    html += `<div class="div-team-row">
+      <span class="div-team-header" style="width:32px;margin-right:6px;"></span>
+      <span class="div-team-header" style="flex:1;"></span>
+      <span class="div-team-header" style="width:46px;text-align:center;">W-L</span>
+      <span class="div-team-header" style="width:46px;text-align:center;">Conf</span>
+      <span class="div-team-header" style="width:46px;text-align:center;">Div</span>
+    </div>`;
+    for (const t of teams) {
+      html += `<div class="div-team-row">
+        <span class="div-team-tri">${t.tricode}</span>
+        <span class="div-team-name">${t.name}</span>
+        <span class="div-team-rec">${t.wins}&ndash;${t.losses}</span>
+        <span class="div-team-rec conf-rec">${t.conf_w}&ndash;${t.conf_l}</span>
+        <span class="div-team-rec div-rec">${t.div_w}&ndash;${t.div_l}</span>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  container.innerHTML = html;
+}
+
+const TEAM_DIVISIONS = {
+  ATL:'Southeast', BOS:'Atlantic', BKN:'Atlantic', CHA:'Southeast', CHI:'Central',
+  CLE:'Central', DAL:'Southwest', DEN:'Northwest', DET:'Central', GSW:'Pacific',
+  HOU:'Southwest', IND:'Central', LAC:'Pacific', LAL:'Pacific', MEM:'Southwest',
+  MIA:'Southeast', MIL:'Central', MIN:'Northwest', NOP:'Southwest', NYK:'Atlantic',
+  OKC:'Northwest', ORL:'Southeast', PHI:'Atlantic', PHX:'Pacific', POR:'Northwest',
+  SAC:'Pacific', SAS:'Southwest', TOR:'Atlantic', UTA:'Northwest', WAS:'Southeast',
+};
 
 async function refreshData() {
   const btn = document.getElementById('refresh-btn');

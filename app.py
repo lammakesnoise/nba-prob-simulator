@@ -269,9 +269,12 @@ def run_simulation(n_sims):
                     div_w[ai] += 1
                     div_l[hi] += 1
 
+        # Determine division leaders for tiebreakers
+        div_leaders = determine_division_leaders(wins, losses, h2h)
+
         # Rank each conference and record details
         for conf_name, conf_idx_list in conference_teams.items():
-            ranked = rank_conference(conf_idx_list, wins, losses, conf_w, conf_l, div_w, div_l, h2h)
+            ranked = rank_conference(conf_idx_list, wins, losses, conf_w, conf_l, div_w, div_l, h2h, div_leaders)
             for seed_0, idx in enumerate(ranked[:10]):
                 seed_counts[conf_name][idx][seed_0] += 1
                 key = (idx, seed_0)
@@ -290,9 +293,41 @@ def run_simulation(n_sims):
     return seed_counts, detail_sum_wins, detail_min_wins, detail_max_wins, detail_game_wins
 
 
-def rank_conference(conf_indices, wins, losses, conf_w, conf_l, div_w, div_l, h2h):
+def determine_division_leaders(wins, losses, h2h):
+    """Determine the leader of each division. Returns set of team indices."""
+    divisions = defaultdict(list)
+    for tid in team_ids:
+        idx = team_idx[tid]
+        div = teams[tid]["division"]
+        total = wins[idx] + losses[idx]
+        wpct = wins[idx] / total if total > 0 else 0.0
+        divisions[div].append((idx, wpct))
+
+    leaders = set()
+    for div, div_teams in divisions.items():
+        div_teams.sort(key=lambda x: -x[1])
+        best_wpct = div_teams[0][1]
+        tied_for_lead = [t for t in div_teams if abs(t[1] - best_wpct) < 1e-9]
+        if len(tied_for_lead) == 1:
+            leaders.add(tied_for_lead[0][0])
+        else:
+            # Break division leader tie with H2H among tied
+            best_idx = tied_for_lead[0][0]
+            best_h2h = -1.0
+            for idx, _ in tied_for_lead:
+                w = sum(h2h[idx][o] for o, _ in tied_for_lead if o != idx)
+                total = sum(h2h[idx][o] + h2h[o][idx] for o, _ in tied_for_lead if o != idx)
+                h2h_pct = w / total if total > 0 else 0.5
+                if h2h_pct > best_h2h:
+                    best_h2h = h2h_pct
+                    best_idx = idx
+            leaders.add(best_idx)
+
+    return leaders
+
+
+def rank_conference(conf_indices, wins, losses, conf_w, conf_l, div_w, div_l, h2h, div_leaders):
     """Rank teams in a conference with tiebreakers."""
-    # Build (index, win_pct, conf_pct, div_pct) tuples
     team_data = []
     for idx in conf_indices:
         total = wins[idx] + losses[idx]
@@ -303,10 +338,8 @@ def rank_conference(conf_indices, wins, losses, conf_w, conf_l, div_w, div_l, h2
         dpct = div_w[idx] / dtotal if dtotal > 0 else 0.0
         team_data.append((idx, wpct, cpct, dpct))
 
-    # Sort by win pct descending
     team_data.sort(key=lambda x: -x[1])
 
-    # Group by win pct and resolve ties
     result = []
     i = 0
     while i < len(team_data):
@@ -317,44 +350,126 @@ def rank_conference(conf_indices, wins, losses, conf_w, conf_l, div_w, div_l, h2
         if len(group) == 1:
             result.append(group[0][0])
         else:
-            result.extend(break_tie(group, h2h))
+            result.extend(break_tie(group, h2h, div_leaders))
         i = j
 
     return result
 
 
-def break_tie(tied, h2h):
-    """Break ties using: H2H, conference record, division record, coin flip."""
+def break_tie(tied, h2h, div_leaders):
+    """Break ties using official NBA rules. 2-team and 3+ team have different order."""
+    if len(tied) == 2:
+        return _break_tie_two(tied, h2h, div_leaders)
+    else:
+        return _break_tie_multi(tied, h2h, div_leaders)
+
+
+def _break_tie_two(tied, h2h, div_leaders):
+    """2-team: (1) H2H, (2) div leader, (3) div record if same div, (4) conf record, (5) random."""
+    a, b = tied[0], tied[1]
+    idx_a, idx_b = a[0], b[0]
+
+    # (1) Head-to-head
+    w_a = h2h[idx_a][idx_b]
+    w_b = h2h[idx_b][idx_a]
+    if w_a != w_b:
+        return [idx_a, idx_b] if w_a > w_b else [idx_b, idx_a]
+
+    # (2) Division leader wins over non-leader
+    a_leads = idx_a in div_leaders
+    b_leads = idx_b in div_leaders
+    if a_leads and not b_leads:
+        return [idx_a, idx_b]
+    if b_leads and not a_leads:
+        return [idx_b, idx_a]
+
+    # (3) Division record (only if same division)
+    if teams[team_ids[idx_a]]["division"] == teams[team_ids[idx_b]]["division"]:
+        if abs(a[3] - b[3]) > 1e-9:
+            return [idx_a, idx_b] if a[3] > b[3] else [idx_b, idx_a]
+
+    # (4) Conference record
+    if abs(a[2] - b[2]) > 1e-9:
+        return [idx_a, idx_b] if a[2] > b[2] else [idx_b, idx_a]
+
+    # (5-7) Playoff-eligible opponent win%, point differential — not available
+    # Fall back to random
+    if np.random.random() > 0.5:
+        return [idx_a, idx_b]
+    return [idx_b, idx_a]
+
+
+def _break_tie_multi(tied, h2h, div_leaders):
+    """3+ teams: (1) div leader, (2) H2H, (3) div record if same div, (4) conf record, (5) random."""
     indices = [t[0] for t in tied]
 
-    # Tiebreaker 1: Head-to-head among tied teams
+    # (1) Division leader wins over non-leaders
+    leaders_in = [t for t in tied if t[0] in div_leaders]
+    non_leaders = [t for t in tied if t[0] not in div_leaders]
+    if leaders_in and non_leaders:
+        # Rank leaders first, then non-leaders (restart criteria for each subgroup)
+        if len(leaders_in) == 1:
+            leader_result = [leaders_in[0][0]]
+        else:
+            leader_result = break_tie(leaders_in, h2h, div_leaders)
+        if len(non_leaders) == 1:
+            non_leader_result = [non_leaders[0][0]]
+        else:
+            non_leader_result = break_tie(non_leaders, h2h, div_leaders)
+        return leader_result + non_leader_result
+
+    # (2) H2H among all tied teams
     h2h_wpct = {}
     for idx in indices:
         w = sum(h2h[idx][o] for o in indices if o != idx)
         total = sum(h2h[idx][o] + h2h[o][idx] for o in indices if o != idx)
         h2h_wpct[idx] = w / total if total > 0 else 0.5
 
-    vals = [round(h2h_wpct[i], 6) for i in indices]
-    if len(set(vals)) == len(vals):
-        return sorted(indices, key=lambda i: -h2h_wpct[i])
+    # Group by H2H win% — if any differentiation, split and restart
+    by_h2h = defaultdict(list)
+    for t in tied:
+        by_h2h[round(h2h_wpct[t[0]], 6)].append(t)
+    if len(by_h2h) > 1:
+        result = []
+        for _, group in sorted(by_h2h.items(), reverse=True):
+            if len(group) == 1:
+                result.append(group[0][0])
+            else:
+                result.extend(break_tie(group, h2h, div_leaders))
+        return result
 
-    # Tiebreaker 2: Conference record
-    conf_pcts = {t[0]: t[2] for t in tied}
-    vals = [round(conf_pcts[i], 6) for i in indices]
-    if len(set(vals)) == len(vals):
-        return sorted(indices, key=lambda i: -conf_pcts[i])
-
-    # Tiebreaker 3: Division record (only if all same division)
+    # (3) Division record (only if ALL in same division)
     divs = set(teams[team_ids[i]]["division"] for i in indices)
     if len(divs) == 1:
-        div_pcts = {t[0]: t[3] for t in tied}
-        vals = [round(div_pcts[i], 6) for i in indices]
-        if len(set(vals)) == len(vals):
-            return sorted(indices, key=lambda i: -div_pcts[i])
+        by_div = defaultdict(list)
+        for t in tied:
+            by_div[round(t[3], 6)].append(t)
+        if len(by_div) > 1:
+            result = []
+            for _, group in sorted(by_div.items(), reverse=True):
+                if len(group) == 1:
+                    result.append(group[0][0])
+                else:
+                    result.extend(break_tie(group, h2h, div_leaders))
+            return result
 
-    # Tiebreaker 4: Random coin flip (composite sort)
+    # (4) Conference record
+    by_conf = defaultdict(list)
+    for t in tied:
+        by_conf[round(t[2], 6)].append(t)
+    if len(by_conf) > 1:
+        result = []
+        for _, group in sorted(by_conf.items(), reverse=True):
+            if len(group) == 1:
+                result.append(group[0][0])
+            else:
+                result.extend(break_tie(group, h2h, div_leaders))
+        return result
+
+    # (5-6) Playoff-eligible opponent win%, point differential — not available
+    # Random
     rng = {i: np.random.random() for i in indices}
-    return sorted(indices, key=lambda i: (-h2h_wpct[i], -conf_pcts[i], -rng[i]))
+    return sorted(indices, key=lambda i: -rng[i])
 
 
 # --- Routes ---
